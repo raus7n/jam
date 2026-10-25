@@ -28,9 +28,16 @@ const readParameters = (queryString: string) => {
 const hasUnsupportedRequiredParameter = (parameters: ReadonlyMap<string, string>) =>
   [...parameters.keys()].some((name) => name.startsWith(REQUIRED_PARAMETER_PREFIX))
 
-// BIP21 allows amounts without an integer part (`amountparam = "amount=" *digit [ "." *digit ]`),
-// e.g. `.5` - prefix them with `0` before conversion.
+// BIP21: `amountparam = "amount=" *digit [ "." *digit ]` - plain decimal BTC, no sign or whitespace.
+// A bitcoin amount cannot be more precise than 1 sat, so more than 8 decimal places is invalid
+// (and must not be silently truncated to a different amount).
+const BIP21_AMOUNT_REGEX = /^(?=\.?\d)\d*(?:\.\d{0,8})?$/
+
+// BIP21 allows amounts without an integer part, e.g. `.5` - prefix them with `0` before conversion.
 const normalizeAmount = (value: string) => (value.startsWith('.') ? `0${value}` : value)
+
+const parseAmount = (value: string): AmountSats | undefined =>
+  BIP21_AMOUNT_REGEX.test(value) ? tryBtcToSat(normalizeAmount(value)) : undefined
 
 export const parseBip21Uri = (raw: string): Bip21ParseResult | undefined => {
   const trimmed = raw.trim()
@@ -66,7 +73,7 @@ export const parseBip21Uri = (raw: string): Bip21ParseResult | undefined => {
 
     const amountBtc = parameters.get('amount')
     if (amountBtc !== undefined) {
-      const satValue = tryBtcToSat(normalizeAmount(amountBtc))
+      const satValue = parseAmount(amountBtc)
       if (satValue !== undefined && satValue > 0) {
         result.amount = satValue
       }
